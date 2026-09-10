@@ -28,16 +28,127 @@ type TenantId = keyof typeof TENANTS;
 const TENANT_ID = (process.env.MOCK_APP_TENANT ?? "riverside") as TenantId;
 const TENANT = TENANTS[TENANT_ID] ?? TENANTS.riverside;
 
+// A visual reskin only, via one wrapping <div> plus plain-tag CSS selectors (table/th/td/form/
+// label/input/button/a) — never a new class, id, or data-testid on any interactive element. A
+// <div> isn't in perception.ts's element query (a[href], button, input, textarea, select), so
+// wrapping the page in one doesn't change any role/name computation, any table's row/cell count
+// (extraction depends on exact Field/Value pairs), or any button/link text (recorded artifacts
+// already match on that). The point of this mock app — no test hooks, legacy table-based markup —
+// is untouched; it just no longer looks abandoned.
+const BASE_STYLES = `
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+    background: #eef1f5;
+    color: #1f2430;
+    margin: 0;
+    padding: 2rem 1rem 4rem;
+  }
+  .page { max-width: 720px; margin: 0 auto; }
+  .page > table[role="presentation"] {
+    background: #1f3a5f;
+    border-radius: 10px 10px 0 0;
+    width: 100%;
+  }
+  .page > table[role="presentation"] h1 {
+    color: #ffffff;
+    font-size: 1.15rem;
+    font-weight: 600;
+    margin: 0;
+    padding: 1.1rem 1.5rem;
+  }
+  .page > hr { display: none; }
+  .page > h2:first-of-type {
+    background: #ffffff;
+    border-radius: 0 0 10px 10px;
+    margin: 0 0 1.5rem;
+    padding: 1.25rem 1.5rem 1.25rem;
+  }
+  h2, h3 {
+    color: #1f2430;
+    font-weight: 600;
+  }
+  h3 { margin-top: 1.75rem; }
+  table:not([role="presentation"]) {
+    width: 100%;
+    border-collapse: collapse;
+    background: #ffffff;
+    border: 1px solid #dde2ea;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+  }
+  th, td {
+    text-align: left;
+    padding: 0.65rem 0.9rem;
+    border-bottom: 1px solid #eef1f5;
+    font-size: 0.92rem;
+  }
+  th {
+    background: #f5f7fa;
+    color: #4b5468;
+    font-weight: 600;
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+  }
+  tr:last-child td { border-bottom: none; }
+  form { background: #ffffff; border: 1px solid #dde2ea; border-radius: 8px; padding: 1.25rem 1.5rem; box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04); }
+  form table { border: none; box-shadow: none; margin-bottom: 1rem; }
+  form table td { border: none; padding: 0.5rem 0.9rem 0.5rem 0; }
+  label { font-size: 0.85rem; color: #4b5468; font-weight: 600; }
+  input[type="text"], select {
+    font: inherit;
+    font-size: 0.92rem;
+    padding: 0.5rem 0.65rem;
+    border: 1px solid #d3d9e2;
+    border-radius: 6px;
+    background: #fbfcfd;
+    min-width: 220px;
+  }
+  input[type="text"]:focus, select:focus {
+    outline: none;
+    border-color: #3660a5;
+    box-shadow: 0 0 0 3px rgba(54, 96, 165, 0.15);
+  }
+  button {
+    font: inherit;
+    font-size: 0.9rem;
+    font-weight: 600;
+    padding: 0.55rem 1.1rem;
+    border: none;
+    border-radius: 6px;
+    background: #2f5aa8;
+    color: #ffffff;
+    cursor: pointer;
+  }
+  button:hover { background: #274a8c; }
+  a { color: #2f5aa8; text-decoration: none; font-size: 0.92rem; }
+  a:hover { text-decoration: underline; }
+  p { font-size: 0.92rem; line-height: 1.5; }
+  p[role="alert"] {
+    background: #fdf2f2;
+    border: 1px solid #f3c2c2;
+    color: #9a2f2f;
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+  }
+  iframe { border-radius: 8px; }
+`;
+
 function layout(title: string, body: string): string {
   return `<!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><title>${title}</title></head>
+<head><meta charset="utf-8"><title>${title}</title><style>${BASE_STYLES}</style></head>
 <body>
+<div class="page">
 <table role="presentation" width="100%">
   <tr><td><h1>${TENANT.brand}</h1></td></tr>
 </table>
 <hr>
 ${body}
+</div>
 </body>
 </html>`;
 }
@@ -161,7 +272,10 @@ function renderNotesPanel(member: Member): string {
   const noteRows = member.notes.map((n) => `<tr><td>${escapeHtml(n)}</td></tr>`).join("");
   return `<!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><title>Account Notes</title></head>
+<head><meta charset="utf-8"><title>Account Notes</title><style>${BASE_STYLES}
+  body { padding: 0.9rem; background: #ffffff; }
+  table { margin-bottom: 0.9rem; }
+</style></head>
 <body>
   <table border="1" cellpadding="4" width="100%">
     <tr><td>Total Notes</td><td>${member.notes.length}</td></tr>
