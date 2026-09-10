@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Operator Console (mock)</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; }
+  .intervention { border: 1px solid #ccc; padding: 1rem; margin-bottom: 1rem; border-radius: 6px; }
+  .intervention.open { border-color: #d9822b; background: #fff8ef; }
+  .intervention.resumed { border-color: #2e8b57; background: #f2fbf5; opacity: 0.7; }
+  img { max-width: 100%; border: 1px solid #ddd; margin-top: 0.5rem; }
+  pre { white-space: pre-wrap; background: #f6f6f6; padding: 0.5rem; max-height: 200px; overflow: auto; }
+  button { padding: 0.5rem 1rem; cursor: pointer; }
+</style>
+</head>
+<body>
+<h1>Operator Console (mock)</h1>
+<p>This is a deliberately bare status/resume surface, not a real co-browsing UI &mdash; the live
+session itself is the actual headed browser window the automation was driving. An operator takes
+control there directly, then resumes here.</p>
+<div id="list">Loading&hellip;</div>
+
+<script>
+async function load() {
+  const res = await fetch('/interventions');
+  const items = await res.json();
+  const list = document.getElementById('list');
+  if (items.length === 0) { list.innerHTML = '<p>No interventions yet.</p>'; return; }
+  list.innerHTML = items.map(renderItem).join('');
+}
+
+function renderItem(item) {
+  const shot = item.screenshotPath ? `<img src="/evidence/${item.screenshotPath}" alt="screenshot">` : '';
+  const snapshot = item.snapshotText ? `<pre>${escapeHtml(item.snapshotText)}</pre>` : '';
+  const resumeForm = item.status === 'open' ? `
+    <form onsubmit="return resume('${item.id}', this)">
+      <label>Notes on what you did: <input name="notes" style="width:60%"></label>
+      <button type="submit">Resume automation</button>
+    </form>` : `<p><em>Resolved at ${item.resolvedAt}. Notes: ${escapeHtml(item.humanNotes || '(none)')}</em></p>`;
+  return `
+    <div class="intervention ${item.status}">
+      <strong>${item.id}</strong> &mdash; ${item.kind} &mdash; status: ${item.status}<br>
+      <strong>Goal/Capability:</strong> ${escapeHtml(item.capabilityOrGoal)}<br>
+      <strong>Current step:</strong> ${escapeHtml(item.currentStep)}<br>
+      <strong>Reason stopped:</strong> ${escapeHtml(item.reason)}<br>
+      ${shot}
+      ${snapshot}
+      ${resumeForm}
+    </div>`;
+}
+
+async function resume(id, form) {
+  const notes = form.notes.value;
+  await fetch(`/interventions/${id}/resume`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ notes }),
+  });
+  await load();
+  return false;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+load();
+setInterval(load, 2000);
+</script>
+</body>
+</html>

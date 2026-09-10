@@ -1,0 +1,2 @@
+{"ts":"2026-09-09T23:26:49.530Z","runId":"replay-2026-09-09T23-26-49-530Z-zdnkdd","kind":"replay","step":0,"event":"start","detail":{"capability":"open_subaccount","capabilityVersion":1,"params":{"memberId":"12345","depositAmount":"500","purpose":"anniversary gift"}}}
+{"ts":"2026-09-09T23:26:49.531Z","runId":"replay-2026-09-09T23-26-49-530Z-zdnkdd","kind":"replay","step":0,"event":"awaiting_approval","detail":{"reason":"Artifact \"open_subaccount\" contains an irreversible step but is not approved (status=\"draft\")."}}

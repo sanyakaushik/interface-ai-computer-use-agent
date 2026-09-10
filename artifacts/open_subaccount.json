@@ -1,0 +1,245 @@
+{
+  "schemaVersion": 1,
+  "id": "open_subaccount",
+  "name": "open_subaccount",
+  "description": "Open a new savings sub-account for member 12345 with an initial deposit of 500 and purpose 'vacation savings', confirming the action to complete it, and report the new sub-account ID.",
+  "capabilityVersion": 1,
+  "status": "approved",
+  "target": {
+    "appId": "riverside-servicing-console",
+    "vendorProduct": "AcmeCore Servicing UI",
+    "vendorVersion": "1.0",
+    "baseUrlPattern": "http://localhost:4000"
+  },
+  "inputParams": [
+    {
+      "name": "memberId",
+      "type": "number",
+      "required": true,
+      "sensitive": false,
+      "description": "Input value for \"memberId\"."
+    },
+    {
+      "name": "depositAmount",
+      "type": "number",
+      "required": true,
+      "sensitive": false,
+      "description": "Input value for \"depositAmount\"."
+    },
+    {
+      "name": "purpose",
+      "type": "string",
+      "required": true,
+      "sensitive": false,
+      "description": "Input value for \"purpose\"."
+    }
+  ],
+  "outputs": [
+    {
+      "name": "newSubAccountId",
+      "type": "string",
+      "description": "Value extracted at step-9 (e.g. \"SA-1001\").",
+      "sourceStepId": "step-9"
+    }
+  ],
+  "steps": [
+    {
+      "id": "step-1",
+      "action": "navigate",
+      "description": "Navigate to http://localhost:4000",
+      "inputBinding": {
+        "kind": "literal",
+        "value": "http://localhost:4000"
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "id": "step-2",
+      "action": "type",
+      "description": "Type into textbox \"Member ID\"",
+      "target": {
+        "candidates": [
+          {
+            "strategy": "role+name",
+            "role": "textbox",
+            "value": "Member ID",
+            "confidence": 0.9
+          }
+        ],
+        "riskLevel": "safe"
+      },
+      "inputBinding": {
+        "kind": "param",
+        "paramName": "memberId"
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "id": "step-3",
+      "action": "click",
+      "description": "Click button \"Search\"",
+      "target": {
+        "candidates": [
+          {
+            "strategy": "role+name",
+            "role": "button",
+            "value": "Search",
+            "confidence": 0.9
+          },
+          {
+            "strategy": "text",
+            "value": "Search",
+            "confidence": 0.5
+          }
+        ],
+        "riskLevel": "safe"
+      },
+      "checkpoint": {
+        "strategy": "urlMatches",
+        "value": "/members/[^/]+"
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "id": "step-4",
+      "action": "click",
+      "description": "Click link \"Open Sub-Account\"",
+      "target": {
+        "candidates": [
+          {
+            "strategy": "role+name",
+            "role": "link",
+            "value": "Open Sub-Account",
+            "confidence": 0.9
+          },
+          {
+            "strategy": "text",
+            "value": "Open Sub-Account",
+            "confidence": 0.5
+          }
+        ],
+        "riskLevel": "irreversible"
+      },
+      "checkpoint": {
+        "strategy": "urlMatches",
+        "value": "/members/[^/]+/subaccount/new"
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "id": "step-5",
+      "action": "type",
+      "description": "Type into textbox \"Initial Deposit (USD)\"",
+      "target": {
+        "candidates": [
+          {
+            "strategy": "role+name",
+            "role": "textbox",
+            "value": "Initial Deposit (USD)",
+            "confidence": 0.9
+          }
+        ],
+        "riskLevel": "safe"
+      },
+      "inputBinding": {
+        "kind": "param",
+        "paramName": "depositAmount"
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "id": "step-6",
+      "action": "type",
+      "description": "Type into textbox \"Purpose\"",
+      "target": {
+        "candidates": [
+          {
+            "strategy": "role+name",
+            "role": "textbox",
+            "value": "Purpose",
+            "confidence": 0.9
+          }
+        ],
+        "riskLevel": "safe"
+      },
+      "inputBinding": {
+        "kind": "param",
+        "paramName": "purpose"
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "id": "step-7",
+      "action": "click",
+      "description": "Click button \"Continue\"",
+      "target": {
+        "candidates": [
+          {
+            "strategy": "role+name",
+            "role": "button",
+            "value": "Continue",
+            "confidence": 0.9
+          },
+          {
+            "strategy": "text",
+            "value": "Continue",
+            "confidence": 0.5
+          }
+        ],
+        "riskLevel": "safe"
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "id": "step-8",
+      "action": "click",
+      "description": "Click button \"Confirm — Open Sub-Account\"",
+      "target": {
+        "candidates": [
+          {
+            "strategy": "role+name",
+            "role": "button",
+            "value": "Confirm — Open Sub-Account",
+            "confidence": 0.9
+          },
+          {
+            "strategy": "text",
+            "value": "Confirm — Open Sub-Account",
+            "confidence": 0.5
+          }
+        ],
+        "riskLevel": "irreversible"
+      },
+      "checkpoint": {
+        "strategy": "urlMatches",
+        "value": "/members/[^/]+/subaccount/confirm"
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "id": "step-9",
+      "action": "extract",
+      "description": "Extract \"newSubAccountId\"",
+      "extractAs": "newSubAccountId",
+      "target": {
+        "candidates": [
+          {
+            "strategy": "labelledValue",
+            "value": "New Sub-Account ID",
+            "confidence": 0.8
+          }
+        ],
+        "riskLevel": "safe"
+      },
+      "timeoutMs": 5000
+    }
+  ],
+  "successCheckpoint": {
+    "strategy": "urlMatches",
+    "value": "/members/[^/]+/subaccount/confirm"
+  },
+  "provenance": {
+    "discoveryRunId": "discovery-2026-09-09T23-26-18-453Z-b6lteh",
+    "recordedAt": "2026-09-09T23:26:36.900Z"
+  }
+}

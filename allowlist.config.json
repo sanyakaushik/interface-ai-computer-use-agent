@@ -1,0 +1,14 @@
+{
+  "allowedOrigins": ["http://localhost:4000", "http://localhost:4001"],
+  "allowedActions": ["navigate", "click", "type", "selectOption", "waitFor", "extract"],
+  "riskyNamePatterns": [
+    "confirm",
+    "submit",
+    "create",
+    "open",
+    "delete",
+    "transfer",
+    "close account",
+    "approve"
+  ]
+}

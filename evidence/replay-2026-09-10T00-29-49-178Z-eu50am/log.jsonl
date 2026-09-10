@@ -1,0 +1,9 @@
+{"ts":"2026-09-10T00:29:49.178Z","runId":"replay-2026-09-10T00-29-49-178Z-eu50am","kind":"replay","step":0,"event":"start","detail":{"capability":"add_account_note","capabilityVersion":1,"params":{"memberId":"12345","noteText":"Confirmed mailing address."}}}
+{"ts":"2026-09-10T00:29:49.745Z","runId":"replay-2026-09-10T00-29-49-178Z-eu50am","kind":"replay","step":"step-1","event":"act","detail":{"action":"navigate","description":"Navigate to http://localhost:4000"}}
+{"ts":"2026-09-10T00:29:49.816Z","runId":"replay-2026-09-10T00-29-49-178Z-eu50am","kind":"replay","step":"step-2","event":"act","detail":{"action":"type","description":"Type into textbox \"Member ID\""}}
+{"ts":"2026-09-10T00:29:49.878Z","runId":"replay-2026-09-10T00-29-49-178Z-eu50am","kind":"replay","step":"step-3","event":"act","detail":{"action":"click","description":"Click button \"Search\""}}
+{"ts":"2026-09-10T00:29:49.941Z","runId":"replay-2026-09-10T00-29-49-178Z-eu50am","kind":"replay","step":"step-4","event":"act","detail":{"action":"type","description":"Type into textbox \"Note\""}}
+{"ts":"2026-09-10T00:29:49.956Z","runId":"replay-2026-09-10T00-29-49-178Z-eu50am","kind":"replay","step":"step-5","event":"act","detail":{"action":"click","description":"Click button \"Add Note\""}}
+{"ts":"2026-09-10T00:29:50.031Z","runId":"replay-2026-09-10T00-29-49-178Z-eu50am","kind":"replay","step":"step-6","event":"act","detail":{"action":"waitFor","description":"Wait 1000ms"}}
+{"ts":"2026-09-10T00:29:51.037Z","runId":"replay-2026-09-10T00-29-49-178Z-eu50am","kind":"replay","step":"step-7","event":"act","detail":{"action":"extract","description":"Extract \"totalNotes\""}}
+{"ts":"2026-09-10T00:29:51.063Z","runId":"replay-2026-09-10T00-29-49-178Z-eu50am","kind":"replay","step":"done","event":"outcome","detail":{"status":"success","outputs":{"totalNotes":"2"}}}

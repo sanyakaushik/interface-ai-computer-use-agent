@@ -1,0 +1,11 @@
+{"ts":"2026-09-09T23:27:02.908Z","runId":"replay-2026-09-09T23-27-02-907Z-19x19y","kind":"replay","step":0,"event":"start","detail":{"capability":"open_subaccount","capabilityVersion":1,"params":{"memberId":"12345","depositAmount":"500","purpose":"anniversary gift"}}}
+{"ts":"2026-09-09T23:27:03.512Z","runId":"replay-2026-09-09T23-27-02-907Z-19x19y","kind":"replay","step":"step-1","event":"act","detail":{"action":"navigate","description":"Navigate to http://localhost:4000"}}
+{"ts":"2026-09-09T23:27:03.591Z","runId":"replay-2026-09-09T23-27-02-907Z-19x19y","kind":"replay","step":"step-2","event":"act","detail":{"action":"type","description":"Type into textbox \"Member ID\""}}
+{"ts":"2026-09-09T23:27:03.654Z","runId":"replay-2026-09-09T23-27-02-907Z-19x19y","kind":"replay","step":"step-3","event":"act","detail":{"action":"click","description":"Click button \"Search\""}}
+{"ts":"2026-09-09T23:27:03.701Z","runId":"replay-2026-09-09T23-27-02-907Z-19x19y","kind":"replay","step":"step-4","event":"act","detail":{"action":"click","description":"Click link \"Open Sub-Account\""}}
+{"ts":"2026-09-09T23:27:03.745Z","runId":"replay-2026-09-09T23-27-02-907Z-19x19y","kind":"replay","step":"step-5","event":"act","detail":{"action":"type","description":"Type into textbox \"Initial Deposit (USD)\""}}
+{"ts":"2026-09-09T23:27:03.758Z","runId":"replay-2026-09-09T23-27-02-907Z-19x19y","kind":"replay","step":"step-6","event":"act","detail":{"action":"type","description":"Type into textbox \"Purpose\""}}
+{"ts":"2026-09-09T23:27:03.762Z","runId":"replay-2026-09-09T23-27-02-907Z-19x19y","kind":"replay","step":"step-7","event":"act","detail":{"action":"click","description":"Click button \"Continue\""}}
+{"ts":"2026-09-09T23:27:03.816Z","runId":"replay-2026-09-09T23-27-02-907Z-19x19y","kind":"replay","step":"step-8","event":"act","detail":{"action":"click","description":"Click button \"Confirm — Open Sub-Account\""}}
+{"ts":"2026-09-09T23:27:03.871Z","runId":"replay-2026-09-09T23-27-02-907Z-19x19y","kind":"replay","step":"step-9","event":"act","detail":{"action":"extract","description":"Extract \"newSubAccountId\""}}
+{"ts":"2026-09-09T23:27:03.886Z","runId":"replay-2026-09-09T23-27-02-907Z-19x19y","kind":"replay","step":"done","event":"outcome","detail":{"status":"success","outputs":{"newSubAccountId":"SA-1002"}}}

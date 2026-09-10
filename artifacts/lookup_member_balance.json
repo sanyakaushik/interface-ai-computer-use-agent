@@ -1,0 +1,128 @@
+{
+  "schemaVersion": 1,
+  "id": "lookup_member_balance",
+  "name": "lookup_member_balance",
+  "description": "Look up member 12345 and read their current savings balance.",
+  "capabilityVersion": 1,
+  "status": "draft",
+  "target": {
+    "appId": "riverside-servicing-console",
+    "vendorProduct": "AcmeCore Servicing UI",
+    "vendorVersion": "1.0",
+    "baseUrlPattern": "http://localhost:4000"
+  },
+  "inputParams": [
+    {
+      "name": "memberId",
+      "type": "number",
+      "required": true,
+      "sensitive": false,
+      "description": "Input value for \"memberId\"."
+    }
+  ],
+  "outputs": [
+    {
+      "name": "savingsBalance",
+      "type": "string",
+      "description": "Value extracted at step-4 (e.g. \"$4821.13\").",
+      "sourceStepId": "step-4"
+    }
+  ],
+  "steps": [
+    {
+      "id": "step-1",
+      "action": "navigate",
+      "description": "Navigate to http://localhost:4000",
+      "inputBinding": {
+        "kind": "literal",
+        "value": "http://localhost:4000"
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "id": "step-2",
+      "action": "type",
+      "description": "Type into textbox \"Member ID\"",
+      "target": {
+        "candidates": [
+          {
+            "strategy": "role+name",
+            "role": "textbox",
+            "value": "Member ID",
+            "confidence": 0.9
+          }
+        ],
+        "riskLevel": "safe"
+      },
+      "inputBinding": {
+        "kind": "param",
+        "paramName": "memberId"
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "id": "step-3",
+      "action": "click",
+      "description": "Click button \"Search\"",
+      "target": {
+        "candidates": [
+          {
+            "strategy": "role+name",
+            "role": "button",
+            "value": "Search",
+            "confidence": 0.9
+          },
+          {
+            "strategy": "text",
+            "value": "Search",
+            "confidence": 0.5
+          }
+        ],
+        "riskLevel": "safe"
+      },
+      "checkpoint": {
+        "strategy": "urlMatches",
+        "value": "/members/[^/]+"
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "id": "step-4",
+      "action": "extract",
+      "description": "Extract \"savingsBalance\"",
+      "extractAs": "savingsBalance",
+      "target": {
+        "candidates": [
+          {
+            "strategy": "labelledValue",
+            "value": "Savings Balance",
+            "confidence": 0.8
+          }
+        ],
+        "riskLevel": "safe"
+      },
+      "timeoutMs": 5000
+    }
+  ],
+  "successCheckpoint": {
+    "strategy": "urlMatches",
+    "value": "/members/[^/]+"
+  },
+  "overrides": [
+    {
+      "tenantId": "lakeside",
+      "baseUrlPattern": "http://localhost:4001",
+      "stepOverrides": {
+        "step-3": {
+          "candidates": [
+            { "strategy": "role+name", "role": "button", "value": "Find Member", "confidence": 0.95 }
+          ]
+        }
+      }
+    }
+  ],
+  "provenance": {
+    "discoveryRunId": "discovery-2026-09-09T23-23-30-505Z-ebpo67",
+    "recordedAt": "2026-09-09T23:23:39.154Z"
+  }
+}

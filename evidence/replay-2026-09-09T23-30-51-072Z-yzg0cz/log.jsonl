@@ -1,0 +1,6 @@
+{"ts":"2026-09-09T23:30:51.073Z","runId":"replay-2026-09-09T23-30-51-072Z-yzg0cz","kind":"replay","step":0,"event":"start","detail":{"capability":"lookup_member_balance","capabilityVersion":1,"params":{"memberId":"12345"}}}
+{"ts":"2026-09-09T23:30:51.614Z","runId":"replay-2026-09-09T23-30-51-072Z-yzg0cz","kind":"replay","step":"step-1","event":"act","detail":{"action":"navigate","description":"Navigate to http://localhost:4000"}}
+{"ts":"2026-09-09T23:30:51.698Z","runId":"replay-2026-09-09T23-30-51-072Z-yzg0cz","kind":"replay","step":"step-2","event":"act","detail":{"action":"type","description":"Type into textbox \"Member ID\""}}
+{"ts":"2026-09-09T23:30:51.759Z","runId":"replay-2026-09-09T23-30-51-072Z-yzg0cz","kind":"replay","step":"step-3","event":"act","detail":{"action":"click","description":"Click button \"Search\""}}
+{"ts":"2026-09-09T23:30:51.826Z","runId":"replay-2026-09-09T23-30-51-072Z-yzg0cz","kind":"replay","step":"step-4","event":"act","detail":{"action":"extract","description":"Extract \"savingsBalance\""}}
+{"ts":"2026-09-09T23:30:51.841Z","runId":"replay-2026-09-09T23-30-51-072Z-yzg0cz","kind":"replay","step":"done","event":"outcome","detail":{"status":"success","outputs":{"savingsBalance":"$4821.13"}}}

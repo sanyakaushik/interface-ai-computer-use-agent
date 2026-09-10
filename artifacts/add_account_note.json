@@ -1,0 +1,179 @@
+{
+  "schemaVersion": 1,
+  "id": "add_account_note",
+  "name": "add_account_note",
+  "description": "For member 12345, add an account note in the Account Notes panel reading 'Verified phone number on file.' and then report how many total notes are now on the account.",
+  "capabilityVersion": 1,
+  "status": "draft",
+  "target": {
+    "appId": "riverside-servicing-console",
+    "vendorProduct": "AcmeCore Servicing UI",
+    "vendorVersion": "1.0",
+    "baseUrlPattern": "http://localhost:4000"
+  },
+  "inputParams": [
+    {
+      "name": "memberId",
+      "type": "number",
+      "required": true,
+      "sensitive": false,
+      "description": "Input value for \"memberId\"."
+    },
+    {
+      "name": "noteText",
+      "type": "string",
+      "required": true,
+      "sensitive": false,
+      "description": "Input value for \"noteText\"."
+    }
+  ],
+  "outputs": [
+    {
+      "name": "totalNotes",
+      "type": "string",
+      "description": "Value extracted at step-7 (e.g. \"1\").",
+      "sourceStepId": "step-7"
+    }
+  ],
+  "steps": [
+    {
+      "id": "step-1",
+      "action": "navigate",
+      "description": "Navigate to http://localhost:4000",
+      "inputBinding": {
+        "kind": "literal",
+        "value": "http://localhost:4000"
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "id": "step-2",
+      "action": "type",
+      "description": "Type into textbox \"Member ID\"",
+      "target": {
+        "candidates": [
+          {
+            "strategy": "role+name",
+            "role": "textbox",
+            "value": "Member ID",
+            "confidence": 0.9
+          }
+        ],
+        "riskLevel": "safe"
+      },
+      "inputBinding": {
+        "kind": "param",
+        "paramName": "memberId"
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "id": "step-3",
+      "action": "click",
+      "description": "Click button \"Search\"",
+      "target": {
+        "candidates": [
+          {
+            "strategy": "role+name",
+            "role": "button",
+            "value": "Search",
+            "confidence": 0.9
+          },
+          {
+            "strategy": "text",
+            "value": "Search",
+            "confidence": 0.5
+          }
+        ],
+        "riskLevel": "safe"
+      },
+      "checkpoint": {
+        "strategy": "urlMatches",
+        "value": "/members/[^/]+"
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "id": "step-4",
+      "action": "type",
+      "description": "Type into textbox \"Note\"",
+      "target": {
+        "candidates": [
+          {
+            "strategy": "role+name",
+            "role": "textbox",
+            "value": "Note",
+            "confidence": 0.9
+          }
+        ],
+        "riskLevel": "safe",
+        "frame": "/members/[^/]+/notes"
+      },
+      "inputBinding": {
+        "kind": "param",
+        "paramName": "noteText"
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "id": "step-5",
+      "action": "click",
+      "description": "Click button \"Add Note\"",
+      "target": {
+        "candidates": [
+          {
+            "strategy": "role+name",
+            "role": "button",
+            "value": "Add Note",
+            "confidence": 0.9
+          },
+          {
+            "strategy": "text",
+            "value": "Add Note",
+            "confidence": 0.5
+          }
+        ],
+        "riskLevel": "safe",
+        "frame": "/members/[^/]+/notes"
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "id": "step-6",
+      "action": "waitFor",
+      "description": "Wait 1000ms",
+      "inputBinding": {
+        "kind": "literal",
+        "value": "1000"
+      },
+      "timeoutMs": 5000
+    },
+    {
+      "id": "step-7",
+      "action": "extract",
+      "description": "Extract \"totalNotes\"",
+      "extractAs": "totalNotes",
+      "target": {
+        "candidates": [
+          {
+            "strategy": "labelledValue",
+            "value": "Total Notes",
+            "confidence": 0.8
+          }
+        ],
+        "riskLevel": "safe",
+        "frame": "/members/[^/]+/notes"
+      },
+      "timeoutMs": 5000
+    }
+  ],
+  "successCheckpoint": {
+    "strategy": "urlMatches",
+    "value": "/members/[^/]+"
+  },
+  "overrides": [],
+  "provenance": {
+    "discoveryRunId": "discovery-2026-09-10T00-29-10-209Z-fap3oo",
+    "recordedAt": "2026-09-10T00:29:26.973Z"
+  }
+}

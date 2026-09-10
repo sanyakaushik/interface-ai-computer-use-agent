@@ -1,0 +1,7 @@
+{"ts":"2026-09-09T23:54:57.861Z","runId":"replay-2026-09-09T23-54-57-860Z-7i6tcr","kind":"replay","step":0,"event":"start","detail":{"capability":"lookup_member_balance","capabilityVersion":1,"params":{"memberId":"12345"}}}
+{"ts":"2026-09-09T23:54:57.861Z","runId":"replay-2026-09-09T23-54-57-860Z-7i6tcr","kind":"replay","step":0,"event":"tenant","detail":{"tenantId":"lakeside","overrideFound":true,"baseUrlOverride":"http://localhost:4001"}}
+{"ts":"2026-09-09T23:54:58.314Z","runId":"replay-2026-09-09T23-54-57-860Z-7i6tcr","kind":"replay","step":"step-1","event":"act","detail":{"action":"navigate","description":"Navigate to http://localhost:4000","tenantId":"lakeside"}}
+{"ts":"2026-09-09T23:54:58.381Z","runId":"replay-2026-09-09T23-54-57-860Z-7i6tcr","kind":"replay","step":"step-2","event":"act","detail":{"action":"type","description":"Type into textbox \"Member ID\"","tenantId":"lakeside"}}
+{"ts":"2026-09-09T23:54:58.430Z","runId":"replay-2026-09-09T23-54-57-860Z-7i6tcr","kind":"replay","step":"step-3","event":"act","detail":{"action":"click","description":"Click button \"Search\"","tenantId":"lakeside"}}
+{"ts":"2026-09-09T23:54:58.490Z","runId":"replay-2026-09-09T23-54-57-860Z-7i6tcr","kind":"replay","step":"step-4","event":"act","detail":{"action":"extract","description":"Extract \"savingsBalance\"","tenantId":"lakeside"}}
+{"ts":"2026-09-09T23:54:58.505Z","runId":"replay-2026-09-09T23-54-57-860Z-7i6tcr","kind":"replay","step":"done","event":"outcome","detail":{"status":"success","outputs":{"savingsBalance":"$4821.13"}}}

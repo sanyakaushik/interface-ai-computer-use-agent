@@ -1,0 +1,26 @@
+{
+  "businessOutcomes": [
+    {
+      "code": "MEMBER_NOT_FOUND",
+      "textIncludes": "No member found with ID",
+      "message": "No member exists with the given ID."
+    },
+    {
+      "code": "ACCESS_DENIED",
+      "textIncludes": "Access Denied",
+      "message": "The member's account is locked; access denied."
+    },
+    {
+      "code": "VALIDATION_ERROR",
+      "textIncludes": "Validation error:",
+      "message": "The submitted form failed server-side validation."
+    }
+  ],
+  "recoverable": [
+    {
+      "code": "SESSION_EXPIRED_RETRY",
+      "textIncludes": "Session Expired",
+      "recovery": "renavigate-once"
+    }
+  ]
+}
