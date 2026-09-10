@@ -1,65 +1,61 @@
 # Computer-Use Automation System
 
-A small, real, end-to-end implementation of interface.ai's take-home brief: an LLM-driven
-discovery agent that learns to complete a goal against a live back-office UI, records what it
-learned as a typed, versioned, agent-invocable **capability artifact**, and a **deterministic
-replay engine** that re-runs that capability in production without the LLM in the loop —
-including runtime error/business-outcome handling, safety guardrails, and a human escalation
-path that takes over the live session.
+This is my submission for interface.ai's take-home. It's a system that:
 
-See [`REPORT.md`](./REPORT.md) for the design write-up (architecture, schema, determinism/error
-handling, heterogeneity & multi-tenant story, escalation & handoff, safety, and cuts).
+1. Uses an LLM to figure out how to do something on a web app it's never seen before (a "discovery" run)
+2. Saves what it learned as a reusable, typed **capability artifact**
+3. Replays that artifact later with **no LLM involved at all** — deterministic, fast, cheap
+4. Handles the errors you'd actually hit in production (member not found, validation errors, session timeouts) instead of just crashing
+5. Knows when to stop and ask a human for help, and lets that human take over the same live browser session
+
+The full design writeup is in [`REPORT.md`](./REPORT.md) — architecture, the artifact schema, how replay stays deterministic, safety, and what I cut.
 
 ## Stack
 
-TypeScript + Node.js, Playwright (Chromium, headed), Anthropic Claude (tool use + vision) for
-discovery, Express (mock target app + handoff control server + capability API), Zod (artifact
-schema + runtime validation), Vitest (unit tests).
+- TypeScript / Node.js
+- Playwright (Chromium, run headed so a human can grab the browser if needed)
+- Claude (Anthropic API) for the discovery agent — tool use + vision
+- Express for the mock target app, the human-handoff server, and a small capability API
+- Zod for the artifact schema
+- Vitest for tests
 
 ## Setup
 
 ```bash
 npm install
 npx playwright install chromium
-cp .env.example .env   # then fill in ANTHROPIC_API_KEY (only needed for `discover`)
+cp .env.example .env
 ```
 
-`ANTHROPIC_API_KEY` is only required for `npm run discover` (the LLM-driven discovery loop).
-`npm run replay`, `npm run mock-app`, `npm run serve`, `npm run handoff`, and `npm test` all run
-with no external services or keys — everything runs against the local mock app.
+Then put your Anthropic key in `.env`. You only need it for `npm run discover` — everything else (replay, tests, the mock app) runs fully offline against the local app.
 
-## The target application
+## What's the target app?
 
-`/mock-app` is a small, deliberately "legacy" server-rendered back-office console ("Riverside
-Credit Union — Servicing Console"): table-based layout, no client-side JS, no `id`/`data-testid`
-attributes on interactive elements — every control is still identifiable by native role +
-accessible name (a `<label>`, a `<button>` with text), which is the point: this is the seam the
-whole system is built around (see `REPORT.md` #1/#4). Flows: search a member by ID → view
-balances → open a new sub-account (multi-field form → confirmation → creation) → add an account
-note in an embedded `<iframe>` panel (a separate document, standing in for a legacy
-sub-app-bolted-onto-a-frame pattern — see `REPORT.md` #4). Seeded data: member `12345` (active),
-`99999` (locked → access denied), `77777` (always "session expired", for exercising the
-recoverable/hard-failure path), any other ID → not found.
+I built a small mock "core banking" console (`/mock-app`) instead of using a real site, since the assignment says not to hit real bank systems and this way I control every edge case. It's deliberately old-school: plain server-rendered HTML, table-based layout, no `id`/`data-testid` attributes anywhere. That's on purpose — the whole point of this project is handling apps that don't give you clean hooks to automate against, and a legacy internal banking tool is exactly that kind of app in real life.
 
-## Demo path
+You can: search a member by ID, view their balances, open a new sub-account (a multi-step form with a confirmation screen), and add an account note through a panel that's actually a separate page embedded in an `<iframe>` (again, a very real pattern in old enterprise software).
 
-Everything below runs from the repo root. Use a few terminals (or run the long-lived servers with
-`&`/`run_in_background`): the mock app, the handoff control server, optionally a second mock-app
-instance for the cross-tenant demo (step 9), and then discovery/replay.
+Test data that's already seeded:
+- `12345` — normal active member
+- `99999` — locked account (returns access denied)
+- `77777` — always shows "session expired," used to test that path
+- anything else — not found
 
-**1. Start the target app:**
+## Running through the demo
+
+Open a few terminals for this.
+
+**1. Start the mock app**
 ```bash
 npm run mock-app
 ```
 
-**2. Start the handoff control server** (needed if a run escalates; safe to leave running):
+**2. Start the handoff server** (only matters if a run gets stuck and escalates, but fine to leave running)
 ```bash
 npm run handoff
 ```
 
-**3. Run the agent on a goal** (requires `ANTHROPIC_API_KEY`) — this is the real, LLM-driven
-discovery run; it opens a visible Chromium window, drives it, and on success saves a capability
-artifact plus full evidence:
+**3. Run the agent on a real goal.** This needs your API key and actually opens a visible Chrome window and drives it:
 ```bash
 npm run discover -- \
   --id lookup_member_balance \
@@ -67,30 +63,21 @@ npm run discover -- \
   --params memberId=12345 \
   --target http://localhost:4000
 ```
-This writes `artifacts/lookup_member_balance.json` and `evidence/<runId>/` (structured log +
-screenshots).
+If it works, you'll get `artifacts/lookup_member_balance.json` plus a log + screenshots under `evidence/<runId>/`.
 
-**4. Replay the saved artifact deterministically** (no LLM, no API key) — reproduces the same
-result from the recorded capability:
+**4. Replay it — no LLM this time**
 ```bash
 npm run replay -- --artifact artifacts/lookup_member_balance.json --params memberId=12345
 ```
 
-**5. Replay against inputs that hit a business outcome / runtime error**, to see the error
-taxonomy in action:
+**5. Try it with inputs that don't just succeed**, to see how it handles real-world outcomes instead of only the happy path:
 ```bash
-# "no such member" — a legitimate business outcome, not a crash
-npm run replay -- --artifact artifacts/lookup_member_balance.json --params memberId=00000
-
-# locked account — another business outcome
-npm run replay -- --artifact artifacts/lookup_member_balance.json --params memberId=99999
-
-# always-expired session — recoverable retry, then a reported hard failure with evidence
-npm run replay -- --artifact artifacts/lookup_member_balance.json --params memberId=77777
+npm run replay -- --artifact artifacts/lookup_member_balance.json --params memberId=00000   # no such member
+npm run replay -- --artifact artifacts/lookup_member_balance.json --params memberId=99999   # locked account
+npm run replay -- --artifact artifacts/lookup_member_balance.json --params memberId=77777   # session expired, ends in a clear failure
 ```
 
-**6. (Optional) Record and replay the riskier `open_subaccount` capability**, to exercise the
-irreversible-step risk classification and approval gate:
+**6. (Optional) Try the riskier capability** — opening a sub-account has a confirmation step, so the recorder marks it irreversible and replay won't run it unless you explicitly approve it:
 ```bash
 npm run discover -- \
   --id open_subaccount \
@@ -98,17 +85,14 @@ npm run discover -- \
   --params memberId=12345,depositAmount=500,purpose="vacation savings" \
   --target http://localhost:4000
 
-# Blocked: artifact is freshly recorded as status:"draft" and the recorder flagged the
-# confirmation step as irreversible.
+# this gets blocked, since the artifact is still "draft" and has an irreversible step
 npm run replay -- --artifact artifacts/open_subaccount.json --params memberId=12345,depositAmount=500,purpose="anniversary gift"
 
-# Set "status": "approved" in artifacts/open_subaccount.json (simulating a human review), then:
+# mark it "status": "approved" in the JSON file, then it works with explicit confirmation
 npm run replay -- --artifact artifacts/open_subaccount.json --params memberId=12345,depositAmount=500,purpose="anniversary gift" --confirm-irreversible true
 ```
 
-**7. (Optional) Record and replay `add_account_note`**, to exercise the iframe/legacy-frame path
-(the "Account Notes" panel on the member detail page is a separately-served document embedded via
-`<iframe>`):
+**7. (Optional) The iframe capability** — proves the same system works when the thing you're clicking is inside an embedded frame, not the main page:
 ```bash
 npm run discover -- \
   --id add_account_note \
@@ -116,12 +100,10 @@ npm run discover -- \
   --params memberId=12345,noteText="Verified phone number on file." \
   --target http://localhost:4000
 
-# Replay against a different member than discovery ever saw — the recorded target.frame pattern
-# ("/members/[^/]+/notes") generalizes exactly like a main-document checkpoint would.
 npm run replay -- --artifact artifacts/add_account_note.json --params memberId=40000,noteText="Requested paper statements."
 ```
 
-**8. (Stretch) Serve saved artifacts as agent-invocable capabilities:**
+**8. (Stretch) Call a saved capability like an API:**
 ```bash
 npm run serve
 curl http://localhost:4200/capabilities
@@ -130,65 +112,35 @@ curl -X POST http://localhost:4200/capabilities/lookup_member_balance/invoke \
   -d '{"params": {"memberId": "12345"}}'
 ```
 
-**9. (Stretch) Cross-tenant reuse** — replay the *same, unmodified* `lookup_member_balance`
-artifact against a second mock-app instance standing in for a different tenant running the same
-vendor product with different branding/labels:
+**9. (Stretch) Reuse the same artifact across a second "tenant"** — a second mock-app instance with different branding and a renamed button, standing in for two banks running the same vendor software:
 ```bash
-# in another terminal, alongside the riverside instance from step 1
-npm run mock-app:lakeside   # a second tenant, port 4001, same app, "Search" is labelled "Find Member"
+npm run mock-app:lakeside   # port 4001, "Search" button is labelled "Find Member" here instead
 
-# fails: the artifact only has an origin override for "lakeside" so far, no label override —
-# this is the artifact correctly detecting a real tenant-branding difference, not a bug
 npm run replay -- --artifact artifacts/lookup_member_balance.json --params memberId=12345 --tenant lakeside
-
-# add a stepOverrides entry for the renamed button to the artifact's "overrides" array (a small,
-# reviewed JSON diff — see artifacts/lookup_member_balance.json), then the same command succeeds:
-npm run replay -- --artifact artifacts/lookup_member_balance.json --params memberId=12345 --tenant lakeside
-
-# riverside, no --tenant flag: unaffected by the lakeside override
-npm run replay -- --artifact artifacts/lookup_member_balance.json --params memberId=12345
 ```
-See `REPORT.md` #4 and `evidence/README.md` ("cross-tenant reuse") for the full walkthrough — the
-override is already committed in `artifacts/lookup_member_balance.json`, so the second command
-above will actually succeed as-is; remove its `stepOverrides` to reproduce the failure first.
+The artifact already has a small override in it for this tenant (see `artifacts/lookup_member_balance.json`'s `overrides` field) — remove it and re-run to see it fail first, which is the point: it proves the override actually matters instead of just being decoration. More detail on this in `REPORT.md` and `evidence/README.md`.
 
-**10. Escalation demo** — with the handoff server running, replay with `--escalate-on-failure
-true --headed true` against a failing input (e.g. `memberId=77777`); the run pauses and prints an
-operator-console URL (`http://localhost:4100/operator`). Open it, review the context/screenshot,
-optionally interact with the still-open, real Chromium window yourself, then click **Resume**
-(with a note) — the run continues from there. See `REPORT.md` #5 for the design.
+**10. Escalation demo** — run a replay with `--escalate-on-failure true --headed true` against something that fails (like `memberId=77777`). It'll pause and print a link to `http://localhost:4100/operator`. Open that, look at the screenshot and context, and click Resume (you can leave a note). The run picks back up from there. Design details in `REPORT.md`.
 
-## Capability artifacts
+## Artifacts
 
-Saved under `/artifacts/*.json`, validated against the Zod schema in
-`src/artifact/schema.ts`. See `REPORT.md` #2 for the schema's fields and rationale.
+Saved as JSON under `/artifacts`, validated against a Zod schema in `src/artifact/schema.ts`. `REPORT.md` covers why the schema looks the way it does.
 
-## Configuration
+## Config files
 
-- `allowlist.config.json` — allowed origins, allowed action types, and name patterns that mark a
-  step irreversible (spec 3.4).
-- `outcome-rules.<appId>.json` — per-target-app rules mapping page text to business
-  outcome/recoverable codes (spec 3.3).
-- `.env` — `ANTHROPIC_API_KEY`, `CLAUDE_MODEL` (default `claude-sonnet-5`), and port overrides.
+- `allowlist.config.json` — which origins and action types the agent is allowed to touch, plus name patterns that flag a step as irreversible
+- `outcome-rules.<appId>.json` — maps page text to known outcomes (business errors vs. recoverable states)
+- `.env` — API key, model name, ports
 
 ## Tests
 
 ```bash
-npm test        # vitest: schema validation, allowlist/risk/redaction, outcome classification,
-                # locator fallback, durable handoff store, API retry/backoff, iframe perception +
-                # frame-aware replay, and a full discovery-loop integration test (scripted LLM
-                # client, real browser, real mock app — no API key needed)
+npm test
 npm run typecheck
 ```
 
-## What's mocked / cut, and why
+52 tests covering the schema, the safety logic, outcome classification, locator fallback, the durable handoff store, API retry logic, the iframe/frame handling, and a full run of the discovery loop itself using a scripted fake LLM (so it doesn't need an API key to test).
 
-See `REPORT.md` #7 ("Cuts"). Short version: the target app is a purpose-built mock (not a real
-bank system, per the brief); the "operator console" is a bare status/resume page, not a real
-co-browsing UI (the actual live-session control is the real, headed browser window); desktop
-surface support is design-only (multi-tenant reuse *and* the iframe/legacy-frame pattern *are*
-implemented — see steps 7 and 9 above and `REPORT.md` #4 — but the operational tooling around
-multi-tenant reuse, like automatic drift detection, is not); parameterization is deterministic
-value-matching, not LLM-based generalization; extraction only understands "Label/Value" table
-rows, not arbitrary prose; business-outcome/checkpoint classification only reads the main
-document, not matched iframes (see `REPORT.md` #7).
+## What I didn't build, and why
+
+Full list is in `REPORT.md` under "Cuts," but the short version: the mock app is obviously not a real bank; the operator console is intentionally bare-bones (the real thing being handed off is the actual browser window, not the console); I did build both multi-tenant reuse and the iframe handling for real, but a proper desktop-app surface is still just a design sketch, not code; parameterization in artifacts is simple exact-value matching, not something LLM-driven; and extraction only understands plain label/value table rows, not free-form text.
