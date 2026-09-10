@@ -2,267 +2,82 @@
 
 ## 1. Architecture
 
-The system has four pieces that share two contracts (an artifact schema and an allowlist/outcome
-config) but otherwise don't know about each other's internals:
+There are four main pieces, and they mostly don't know about each other's internals — they just agree on two shared things: the artifact schema, and an allowlist/outcome config.
 
-- **Discovery loop** (`src/agent`): an LLM-driven observe → decide → act loop against a live
-  Playwright session. Perception (`perception.ts`) never exposes the DOM to the model — each turn
-  it walks the live page and returns a flat list of `(role, accessible name, value)` triples, each
-  tagged with a self-describing `ref`. The LLM (Claude, via tool use) only ever sees that list plus
-  a screenshot, and acts through eight literal tools (click/type/selectOption/navigate/waitFor/
-  extract/finish_success/report_stuck) — never arbitrary code. This is the load-bearing design
-  choice: it means the agent works identically on a table-based, no-test-ID legacy page as it would
-  on a modern one, and it gives the allowlist something concrete to gate (a fixed action-type
-  vocabulary, not "run this JS").
-- **Recorder** (`src/artifact/recorder.ts`): translates a successful discovery transcript into a
-  versioned `CapabilityArtifact`. This is a pure, deterministic transform — no LLM involved — and
-  is the only place a transcript becomes a capability.
-- **Replay engine** (`src/replay`): loads an artifact + params and executes it with zero model
-  calls, using a ranked locator fallback chain and a configured outcome taxonomy (business
-  outcome / recoverable / hard failure) to decide what to do at each step.
-- **Handoff** (`src/handoff`): a small Express control server (separate process) that records
-  intervention requests and resume signals; it never touches the browser itself.
+- **Discovery loop** (`src/agent`) — the LLM-driven part. It's an observe → decide → act loop running against a live Playwright session. The key thing here: the model never sees the DOM. Every turn, `perception.ts` walks the page and hands back a flat list of interactive elements as (role, name, current value), each with a short id it can reference. It acts through eight fixed tools — click, type, select, navigate, wait, extract, finish, or say it's stuck — never arbitrary code. This was the decision I cared most about getting right, because it's what makes the agent work the same way on an ugly table-based page as it would on a modern one, and it's also what lets the allowlist actually mean something (you can restrict a fixed set of actions, you can't sensibly restrict "run this JS").
+- **Recorder** (`src/artifact/recorder.ts`) — takes a successful discovery run and turns it into a versioned artifact. No LLM here, it's a straight deterministic transform.
+- **Replay engine** (`src/replay`) — loads an artifact and runs it with zero model calls, using a ranked list of locator strategies per step and a config-driven outcome taxonomy to decide what a given page state actually means.
+- **Handoff server** (`src/handoff`) — a small separate Express server that tracks intervention requests and resume signals. It never touches the browser directly.
 
-**Key trade-offs:**
-- *Single Node process per run, no queue/service mesh.* The brief explicitly discourages building
-  scaling infrastructure prematurely. Discovery, replay, and the capability API are separate
-  entry points, but nothing here assumes more than one instance; a real deployment would put a
-  queue in front of replay invocations, not reachitecture the artifact/engine boundary.
-- *Headed (not headless) Chromium by default.* Costs a little speed, but it is what makes the
-  human-escalation story real (§5) rather than aspirational — the same OS-level window is what a
-  human takes over.
-- *Perception via a hand-rolled accessibility walk, not Playwright's own ARIA snapshot helper.*
-  Gives full control over the `ref` format the LLM sees and keeps a single code path that both the
-  discovery loop and, conceptually, a future desktop backend could implement (§4).
-- *TypeScript + Zod end-to-end* so the artifact contract — the focal point of the assignment — is
-  both a compile-time type and a runtime-validated boundary (untrusted JSON in, typed object out).
+A few decisions worth calling out:
+
+- One process, no queue. The brief is pretty explicit about not building scaling infrastructure prematurely, so I didn't. Discovery, replay, and the capability API are separate entry points already, which is the part that would actually matter if this needed to scale later.
+- Chrome runs headed, not headless, even though that's slower. This is what makes the human handoff story real instead of hand-wavy — the browser a person takes over is the literal same window, not something I'd have to fake.
+- I wrote my own accessibility-tree walker instead of using Playwright's built-in ARIA snapshot. It's a bit more code, but it gives me full control over the format the model sees, and it's the same shape of thing a desktop accessibility API would hand back, so the seam for porting this to a desktop app later already exists.
+- TypeScript + Zod everywhere so the artifact — which is really the centerpiece of this whole assignment — is both a compile-time type and something that gets validated at runtime, since it's untrusted JSON coming off disk.
 
 ## 2. Artifact schema
 
-`src/artifact/schema.ts`. An artifact is not a step recording — it is a capability contract, so it
-carries, beyond the ordered `steps[]`:
+Defined in `src/artifact/schema.ts`. The thing I kept reminding myself while designing this: an artifact isn't just "the steps I recorded," it's a contract a calling agent (or a human reviewer) has to be able to trust without reading the code. So besides the ordered `steps[]`, it carries:
 
-- **`target`**: `{ appId, vendorProduct, vendorVersion, baseUrlPattern }`. Deliberately *not* a
-  literal tenant URL — this is the multi-tenant seam (§4): an artifact is scoped to a vendor
-  product/version, and a tenant's concrete base URL is supplied at replay time.
-- **`inputParams[]` / `outputs[]`**: typed, named, described — the calling contract an AI agent
-  (or a human reviewer) needs without reading the steps. `inputParams` also carries `sensitive`,
-  enforced by the redaction layer (§6).
-- **`steps[].target.candidates[]`**: a *ranked* list of locator strategies
-  (`role+name` → `text` → `cssPath`), each with a confidence score, rather than one selector.
-  This is the single most important schema decision: it encodes *how sure we are* about each way
-  of finding a control, and lets replay degrade gracefully instead of being all-or-nothing on one
-  brittle selector.
-- **`steps[].checkpoint`** and a top-level **`successCheckpoint`**: every state-changing step (and
-  the run overall) asserts what "worked" looks like, rather than assuming the last action
-  succeeded — directly the glossary's "checkpoint" concept.
-- **`steps[].target.riskLevel`** (`safe`/`irreversible`) and top-level **`status`**
-  (`draft`/`approved`): risk lives on the artifact, not bolted onto the caller, so it travels with
-  the capability wherever it's invoked from.
-- **`provenance.discoveryRunId`**: links to `/evidence`, but the raw transcript is never embedded
-  — the artifact is meant to be read and diffed by a human reviewer without wading through a
-  chat log.
+- **`target`** — `{ appId, vendorProduct, vendorVersion, baseUrlPattern }`. Not a literal URL for one tenant. This is what makes multi-tenant reuse possible later (more in §4) — the artifact is scoped to a vendor product, and the actual base URL gets supplied at replay time.
+- **`inputParams[]` / `outputs[]`** — typed and named, so an agent calling this thing knows what to pass and what it'll get back without opening the file. `inputParams` also has a `sensitive` flag that the redaction layer respects.
+- **`steps[].target.candidates[]`** — this is probably the single decision I'd defend hardest. Instead of one selector per step, each step has a ranked list: try role+name first, fall back to text, fall back to a raw CSS path as a last resort, each with a confidence number. It means replay degrades gracefully instead of being all-or-nothing on one brittle selector.
+- **`checkpoint`** on each step, plus a top-level `successCheckpoint` — a way to actually verify a step did what it was supposed to, instead of just assuming the click worked.
+- **`riskLevel`** per step and `status` (`draft`/`approved`) at the artifact level — risk travels with the capability itself, it's not something the caller has to remember to check separately.
+- **`provenance.discoveryRunId`** — points back to the evidence folder, but the raw transcript never gets embedded in the artifact. The idea is a human should be able to review the artifact JSON directly without wading through a chat transcript.
 
-**Parameterization** is deliberately simple and explainable rather than ML-driven: discovery is
-invoked with named param values (e.g. `memberId=12345`); any `type`/`selectOption` action whose
-literal text exactly matches a supplied value is recorded as `inputBinding: {kind:"param", ...}`
-instead of a literal. This is a documented cut (§7) — it can't infer a parameter the operator
-didn't tell it about — but it's fully auditable in the saved JSON, which matters more for a
-reviewed, regulated-environment artifact than cleverness would.
+On parameterization: when you run discovery, you pass named values like `memberId=12345`. If the agent types that exact value somewhere, the recorder records it as a parameter binding instead of a literal. It's simple — deterministic string matching, nothing clever — but it's fully visible in the saved JSON, and for something that's meant to be reviewed before going into unattended use, I'd rather have something boring and auditable than something smarter I can't fully explain. I list this as a cut in §7.
 
 ## 3. Determinism & error handling
 
-Replay (`src/replay/engine.ts`) never calls an LLM. Each step:
+`src/replay/engine.ts` never calls a model. For each step:
 
-1. **Resolves its target** via `locator.ts`'s fallback chain — `role+name` first (survives markup
-   rewrites since it targets accessibility semantics, not implementation detail), then `text`,
-   then a recorded structural `cssPath` as a last resort. Each candidate gets a short, independent
-   timeout, so one dead candidate doesn't consume the whole step's budget. Failure to resolve *any*
-   candidate is reported as a hard failure carrying every attempted candidate and its error — not
-   a bare "element not found."
-2. **Acts**, then **classifies the resulting page** against `outcome-rules.<appId>.json`
-   (`src/replay/outcomes.ts`) *before* trusting the step's own checkpoint. This ordering is
-   deliberate: a validation error or "member not found" page will not satisfy the next
-   checkpoint, but that's not a locator/timing bug — it's the taxonomy's job to recognize it
-   first and short-circuit with a **business outcome** (`{status:"business_outcome", code,
-   message}`), distinct from a **hard failure**. Getting this distinction backwards (treating
-   "no such member" as a crash) is the mistake the assignment explicitly calls out, and it's why
-   outcome classification runs ahead of checkpoint verification, not after.
-3. **Recoverable conditions** (currently: a known session-expired interstitial) get exactly one
-   inline retry (re-navigate) before being escalated to a hard failure — bounded, not an infinite
-   loop, and the distinction between "recovered" and "still broken after retrying" is itself
-   logged.
-4. **Hard failures** (locator exhausted, checkpoint unmet after a real action, disallowed
-   origin/action) return `{status:"failure", stepId, expected, observed, evidencePath}` with a
-   screenshot saved to `/evidence` — enough to debug without re-running.
-5. **Extraction** (`src/replay/extraction.ts`) resolves output values the same deterministic way:
-   via a recorded "Label" for a table row, re-read from the *current* page rather than replayed
-   from the recording (so a different member ID legitimately returns a different balance).
+1. It tries to resolve the target through the fallback chain in `locator.ts` — role+name first (this is the one that survives most markup changes since it's based on accessibility semantics, not implementation), then text, then the raw CSS path if it was recorded. Each one gets its own short timeout so a dead candidate doesn't eat the whole step's budget. If nothing resolves, you get a hard failure that lists every candidate it tried and why each failed — not just "element not found."
+2. After acting, it checks the resulting page against `outcome-rules.<appId>.json` *before* trusting the step's checkpoint. This ordering matters: a validation error page or a "no such member" page won't satisfy whatever checkpoint comes next, but that's not a timing bug, it's the outcome taxonomy's job to catch it first and report it as a **business outcome**, not a crash. This is exactly the trap the assignment calls out — treating "member not found" as a failure instead of a legitimate answer — so I made sure the check for that runs before anything else gets a chance to misinterpret it.
+3. Recoverable states (right now: one specific "session expired" interstitial) get exactly one retry before escalating to a hard failure. Not an unbounded loop, and whether the retry actually fixed things gets logged either way.
+4. Hard failures — locator exhausted, checkpoint never satisfied, disallowed action — come back with the step id, what was expected, what was actually observed, and a screenshot saved to disk. Enough to debug without re-running the whole thing.
+5. Extraction (`src/replay/extraction.ts`) works the same deterministic way: it re-reads the value off the live page using a recorded label, rather than replaying whatever value was seen during discovery. Otherwise a different member's balance would just come back wrong.
 
-Config-driven outcome rules (rather than hardcoded logic) mean adding a new business-outcome or
-recoverable pattern for a new screen is a JSON edit, not a code change — this is also the seam
-that would carry drift *detection*: a step that starts throwing `LOCATOR_NOT_FOUND` in production
-across many runs is a drift signal an operator would triage by updating `outcome-rules`/candidate
-lists, not by re-recording from scratch.
+I put the outcome rules in a config file rather than code specifically so adding a new business-outcome pattern for some other screen is a one-line JSON edit. It's also, I think, the natural place drift detection would live eventually — if one step starts throwing "locator not found" across a lot of runs, that's a signal to go update the config or the candidate list, not to re-record the whole capability from scratch.
 
 ## 4. Heterogeneity & multi-tenant
 
-**Surface abstraction — including a legacy pattern that's implemented, not just described.**
-The agent loop, the tool contract, and the artifact's `role+name` locator strategy are all
-expressed in terms of (role, accessible name, value) — never raw markup. That's exactly the
-shape an OS accessibility-tree walk over a desktop app produces. But "no clean DOM" isn't only a
-markup-quality problem — legacy servicing consoles are often literally assembled from separately
-maintained sub-apps bolted together via `<iframe>` (a frameset-descended pattern real back-office
-software still uses). Rather than assume that away, the mock app's "Account Notes" panel is a
-genuinely separate document embedded via iframe, and perception (`src/agent/perception.ts`) walks
-every frame on the page (`page.frames()`), not just the main document — each element's `ref` is
-self-describing down to which frame it's in (`frameIdx::role::name::nth`). The artifact schema
-carries this through: a step's `target.frame` is a parameterized URL pattern (recorded and
-generalized exactly like a checkpoint — see §3) that tells replay which frame to search before
-resolving locator candidates (`resolveFrameRoot` in `src/replay/engine.ts`). A real,
-LLM-discovered capability (`artifacts/add_account_note.json`, `evidence/README.md`) types into
-and clicks controls inside the iframe and extracts a labelled fact from within it, and replays
-deterministically against a member never seen during discovery. Porting to a legacy web app needed
-no change beyond this (frames are still a web-DOM concept); porting to *desktop* is the piece that
-remains design-only: writing a new `perception.ts`/`actions.ts` pair against an OS accessibility
-API (UI Automation/AXUIElement) behind the same interface, and adding a `cssPath`-equivalent
-last-resort strategy for that platform to the schema's `LocatorStrategy` enum. The agent loop,
-recorder, and replay engine would not change either way — that's the seam holding.
+**The DOM-agnostic part actually got tested against something harder than the happy path.** Everything in the agent loop and the artifact schema is expressed as (role, name, value), never raw markup — which is the same shape you'd get walking a desktop app's accessibility tree. But "no clean DOM" isn't only about ugly markup. A lot of real legacy servicing consoles are literally stitched together out of separate sub-apps glued in with `<iframe>`s. So I built that into the mock app on purpose: the "Account Notes" panel on the member page is a genuinely separate document loaded in an iframe, and I updated `perception.ts` to walk every frame on the page, not just the top one. Each element's id encodes which frame it came from. The artifact schema carries this forward too — a step can have a `target.frame` pattern (generalized the same way a checkpoint is) telling replay which frame to look inside before trying to resolve anything. There's a real, LLM-recorded capability (`artifacts/add_account_note.json`) that types and clicks inside that iframe and pulls a value back out of it, and it replays fine against a member it never saw during discovery. Porting this to another legacy web app needs nothing extra — frames are still just a web concept. The one surface I didn't actually build is a desktop app: that would mean a new perception/actions pair against something like Windows UI Automation or macOS's accessibility API, behind the same interface. The rest of the system — the loop, the recorder, the replay engine — wouldn't need to change either way, which is the point.
 
-**Multi-tenant reuse — implemented as a stretch goal, not just designed.** An artifact's `target`
-names a *vendor product + version*, not a tenant. `CapabilityArtifact.overrides[]`
-(`src/artifact/schema.ts`) is a small array of `{tenantId, baseUrlPattern?, stepOverrides}`
-records: `baseUrlPattern` lets a tenant's actual instance live at a different origin than the one
-discovery was recorded against, and `stepOverrides[stepId].candidates` contribute tenant-specific
-locator candidates that the replay engine tries *first*, ahead of the base artifact's own
-candidates, for that step only (`executeStep`'s `candidatesFor()` in `src/replay/engine.ts`). A
-reviewer adds one of these when they notice a tenant's instance differs — a small, auditable JSON
-diff, not a re-recording, and not silently generated by anything.
+**Multi-tenant reuse is actually implemented, not just designed.** An artifact's `target` names a vendor product and version, not one specific tenant. There's an `overrides[]` array on the artifact — a small list of `{tenantId, baseUrlPattern, stepOverrides}` entries. `baseUrlPattern` lets a tenant's instance live at a totally different URL, and `stepOverrides` gives specific steps an extra locator candidate to try first, ahead of whatever the base artifact already has. A reviewer would add one of these when they notice a particular tenant's instance is slightly different — it's meant to be a small, readable diff, not a full re-recording.
 
-Demoed end to end (`evidence/README.md`, "cross-tenant reuse"): the real, LLM-discovered
-`lookup_member_balance` artifact was recorded once against "Riverside" (the mock app on :4000,
-search control labelled "Search"). A second tenant instance, "Lakeside" (:4001, same vendor
-product, same routes and business logic, but branded differently and with that control labelled
-"Find Member" — a realistic per-tenant config difference), was stood up without touching the
-artifact. Replaying the unmodified artifact with `--tenant lakeside` and only a `baseUrlPattern`
-override correctly **fails** at the renamed control (proving the override is load-bearing, not
-decorative); adding one `stepOverrides` entry for that step makes the same artifact **succeed**
-against Lakeside; replaying against Riverside again with no `--tenant` flag confirms the base
-tenant is provably unaffected by the addition. One artifact, one small reviewed diff, two tenants,
-zero re-recording.
+I actually demoed this end to end: the real `lookup_member_balance` artifact, recorded once against a "Riverside" mock instance, replayed against a second "Lakeside" instance (different branding, and its search button is literally labelled differently). With only a URL override and no step override, it correctly *fails* on the renamed button — which is the point, it proves the override actually does something rather than just sitting there unused. Add one override entry for that step, and the same artifact succeeds against Lakeside. Replay it against Riverside again with no override selected, and it's completely unaffected. One artifact, one small JSON diff, two tenants, no re-recording.
 
-**Drift detection**, per this design, is inferred from replay outcomes rather than needing a
-separate crawler: a `LOCATOR_NOT_FOUND` hard failure whose lowest-confidence (`cssPath`)
-candidate is what last worked, or a rising failure rate on one step across tenants running the
-same `vendorProduct`/`vendorVersion`, is the signal an artifact needs a reviewed update (in the
-common case, exactly the kind of one-step override just demonstrated) — the `draft`/`approved`
-status field is exactly the gate that would sit in front of promoting an edited artifact back
-into unattended use. **Not implemented**: any automatic tooling to *detect* that drift and propose
-the override — today a human notices the failure (as in the demo) and edits the JSON by hand. A
-tenant registry mapping `(appId, tenantId) → baseUrl` operationally (rather than one override
-entry per artifact) and per-tenant allowlist scoping (today's `allowlist.config.json` lists every
-known tenant origin in one flat file — fine for two tenants, not for hundreds) are the two things
-I'd build next to take this from "the mechanism works" to "this is how hundreds of tenants would
-actually be configured."
+What I didn't build: any tooling that automatically *notices* drift and proposes an override — right now a human has to see the failure and edit the JSON themselves, same as in the demo. A real tenant registry and per-tenant allowlist scoping (today it's one flat file, which is fine for two tenants and not for two hundred) are the two things I'd reach for next if this needed to actually operate at the scale the brief describes.
 
 ## 5. Escalation & handoff
 
-**Detecting "stuck."** Two paths: (a) the discovery agent proactively calls `report_stuck` when
-it can't recognize the page state, has tried and failed a couple of times, or is facing a
-step it judges irreversible and unclear — the system prompt explicitly tells it that asking for
-help is the correct behavior, not a wrong guess; (b) replay treats certain hard failures (when
-invoked with `--escalate-on-failure`) as escalable rather than terminal.
+There are two ways the system decides it's stuck. During discovery, the agent itself can call a "report stuck" tool when it doesn't recognize the page, when it's tried something a couple times and it's not working, or when it's about to do something it's not confident is safe — the system prompt tells it explicitly that asking for help is the right move, not a failure. During replay, certain hard failures can optionally be treated as escalations instead of dead ends, if you run it with `--escalate-on-failure`.
 
-**Raising the request.** Both paths call the same `raiseIntervention` (`src/handoff/client.ts`),
-carrying the goal/capability id, the current step, the reason, and a screenshot + perception
-snapshot — everything §3.6 asks for a human to act on.
+Either path calls the same function to raise an intervention — it records the goal or capability, the step it was on, why it stopped, and a screenshot plus a snapshot of what the page looked like. That's everything a person would need to actually act on it.
 
-**Taking control of the live session — the real part.** The browser runs headed for exactly this
-reason: when the loop raises an intervention it stops issuing Playwright commands and blocks on
-`waitForResume`, but it does not close or replace the session. The window a person sees and can
-click into *is* the automation's live session, not a fresh one — there is no proxying or
-co-browsing layer in between, which is also why there's nothing to get out of sync. "Who is in
-control" is exactly the automation's call-stack position: paused-and-polling vs.
-actively-issuing-commands; a `resumed`-status intervention is the only way out of the poll.
+The part I think is the most honest thing about this design: the browser runs headed specifically so that when it escalates, it just... stops sending commands and waits. It doesn't close the window or spin up anything new. The browser window a person would grab is the literal same session the automation was using a second ago. There's no proxying, no separate co-browsing layer to keep in sync with reality — which also means there's nothing that can silently drift out of sync. Whether the automation or a human is "in control" is just whether it's currently blocked waiting for a resume signal or not.
 
-**What's mocked, explicitly.** The "operator console" (`src/handoff/operator.html`) is a bare
-polling page showing context + a Resume button with a notes field — not a real co-browsing UI,
-per the assignment's own scope note. What's real is the control-transfer mechanism: pause,
-expose the literal live window, a recorded resume signal, and the human's notes captured as
-evidence (`humanNotes` on the `InterventionRequest`, logged to `/evidence`).
+I want to be upfront about what's fake here versus what's real. The "operator console" is genuinely just a bare page — a list of open interventions, a screenshot, a resume button with a notes field. It's not a real co-browsing tool, and I'm not pretending it is. What's real is the actual mechanism: the pause, the fact that the live session is untouched and waiting, the resume signal, and the human's notes getting captured as part of the record.
 
-**Limits.** The intervention store is a single JSON file (`src/handoff/store.ts`), not a real
-database — no transactions, no concurrent-writer safety — but it does survive a handoff-server
-restart without losing an open intervention, which an in-memory version cannot (tested in
-`tests/handoff-store.test.ts`, including recovery from a corrupted file). What's still missing:
-no notification mechanism (an operator must be watching the console); and only one human at a
-time can plausibly act on a given session, which the model doesn't yet enforce beyond "there's
-one browser window."
+One limitation worth naming: the intervention store is a single JSON file on disk, not a real database, so there's no protection against concurrent writers. It does survive a server restart without losing an open intervention, which I tested directly, but there's no notification system — someone has to be actually looking at the console page to know something needs attention.
 
 ## 6. Safety
 
-- **Allowlist** (`allowlist.config.json`, `src/safety/allowlist.ts`): an explicit origin list and
-  action-type list, checked identically by discovery (before every navigate/tool execution) and
-  replay (before every step). An attempted out-of-allowlist navigation is a hard stop, not a
-  warning.
-- **Risk classification** (`src/safety/risk.ts`): two independent, conservative signals feed
-  this, and either alone is enough to tag a step `irreversible` at record time — (1)
-  `classifyRisk`: the target's accessible name matches a configured pattern (`confirm`, `submit`,
-  `create`, `delete`, …); (2) `pageTextSignalsIrreversibility`: the page itself said something
-  like "this action cannot be undone" immediately before the click, regardless of what the control
-  is named. (2) exists specifically because (1) alone is trivially wrong for a blandly-named
-  control ("OK", "Continue") sitting next to an explicit warning — both signals are exercised in
-  `tests/safety.test.ts`. Replay's approval gate (`checkApprovalGate`) then requires *both* the
-  artifact to be `status:"approved"` *and* an explicit per-invocation
-  `--confirm-irreversible`/`confirmIrreversible` flag before executing any such step — an artifact
-  can't silently graduate from reviewed-draft to unattended-irreversible-execution. I chose
-  block-until-explicit-confirmation over "just flag it" because the brief frames this as regulated
-  financial data and irreversible operations (opening an account) — the cost of a false block (an
-  operator re-running with the flag) is much lower than the cost of an unattended irreversible
-  action.
-- **Redaction** (`src/safety/redaction.ts`): input params the schema marks `sensitive` are masked
-  wherever they're logged, plus a heuristic backstop (SSN-shaped and long-digit-run values) that
-  catches an operator forgetting to flag a field. Applied uniformly by the evidence logger, so
-  discovery transcripts and replay logs get the same treatment.
-- **Limits.** The allowlist is origin/action-type only — it doesn't understand *data* scope (e.g.
-  "may read member 12345 but not 99999"); redaction is pattern-based, not a full PII classifier,
-  so an unusually-shaped secret could slip through; and risk classification, even with two
-  signals, is still not exhaustive — a control that's both blandly named *and* on a page with no
-  explicit warning text would still be missed (though a rename between recording and replay would
-  also fail locator resolution first in most cases, since `role+name` is the primary candidate,
-  surfacing as a hard failure rather than a silent risk miss).
+- **Allowlist** — a flat config listing which origins and which action types are allowed at all, checked the same way by both discovery and replay before anything happens. Trying to navigate somewhere off the list is a hard stop, not a warning.
+- **Risk classification** — I ended up using two separate signals here, and either one alone is enough to flag a step as irreversible. The first is just pattern matching on the control's name (does it say "confirm," "delete," "submit," that kind of thing). The second checks whether the page itself said something like "this cannot be undone" right before the click happened, regardless of what the button is actually called. I added the second one because the first one alone is obviously wrong for a button that's just labelled "OK" sitting next to a big warning. Once something's flagged irreversible, replay won't run it unless the artifact is marked approved *and* the caller explicitly passes a confirmation flag — both, not either. I went with block-by-default here rather than just flagging it, because this is meant to stand in for regulated financial actions, and re-running with a flag is a much smaller cost than accidentally executing something irreversible.
+- **Redaction** — any input param marked sensitive gets masked everywhere it would otherwise show up in a log, and there's also a basic pattern check (SSN-shaped strings, long digit runs that look like account numbers) as a backstop in case someone forgets to flag a field.
+- **Where this is weak** — the allowlist only understands origins and action types, not data scope, so it can't express something like "this agent can read member 12345 but not 99999." Redaction is pattern-based, not a real PII classifier, so something unusual-looking could slip through. And risk classification, even with two signals, could still miss a control that's blandly named on a page with no explicit warning — though in practice a renamed control would usually also fail locator resolution first, so it'd surface as a hard failure rather than silently running something risky.
 
 ## 7. Cuts
 
-Deliberately left minimal or undone, with what I'd build next:
+Things I left out on purpose, and what I'd do next if I kept going:
 
-- **Desktop surface support is design-only** (§4), per the brief's explicit scope — this is the
-  one surface-heterogeneity claim still unproven by code. Multi-tenant reuse and the iframe/legacy
-  frame pattern, by contrast, *are* implemented (§4) — but multi-tenant only has the
-  candidate-override mechanism, not the operational tooling around it (a real tenant registry,
-  drift *detection*, per-tenant allowlist scoping — see §4's "not implemented" note). Next:
-  implement a second `perception.ts`/`actions.ts` pair against an OS accessibility API to prove
-  the last remaining surface seam holds too.
-- **No LLM-based parameter generalization** — deterministic exact-value matching only. Next: a
-  bounded, reviewed step where a human confirms which typed values should have been parameters,
-  rather than trusting an LLM's guess unattended.
-- **Two stretch goals** (the agent-facing capability API, `src/capabilities/api.ts`, and
-  cross-tenant reuse, `overrides[]` + `src/replay/engine.ts`), at the top of the brief's "at most
-  one or two." Confidence/approval scoring and multi-run stability checks were the next candidates
-  I'd reach for with more time.
-- **No notification channel** for the handoff server (§5) — an operator must be watching the
-  console; the intervention store itself is file-backed and survives a restart (§5).
-- **Extraction only understands "Label/Value" table rows** (`src/replay/extraction.ts`), not
-  arbitrary prose. Every fact this system currently reads back is presented that way in the mock
-  app; a real target with prose-embedded facts would need a more general (and still
-  LLM-free-at-replay-time) extraction strategy — likely anchored text-proximity rather than exact
-  table structure.
-- **Business-outcome/checkpoint classification only reads the main document**
-  (`classifyPageText`/`verifyCheckpoint` in `src/replay/engine.ts`), even though target
-  resolution now understands frames. A validation error or "not found" state rendered *inside* an
-  iframe (rather than the main page, as in this project's mock app) wouldn't be caught by the
-  outcome taxonomy today — extending those two functions to also scan matched frames is
-  straightforward given the frame-resolution plumbing already exists, just not done.
-- **No multi-run stability/flakiness signal** — each replay is judged independently; running N
-  times and reporting a pass rate per artifact was the most valuable stretch goal I didn't have
-  time for.
+- **Desktop support is design-only.** This is the one part of the heterogeneity story I didn't actually build — multi-tenant reuse and the iframe pattern are both real, working code, but a desktop surface would need an actual new perception/actions implementation against something like UI Automation, and I didn't have time to build and prove that out.
+- **No LLM-based parameter generalization** — I use plain exact-value matching to figure out which typed values should become parameters. It's simple enough to fully audit, at the cost of not being able to infer anything the operator didn't explicitly tell it.
+- **Two stretch goals, not more** — the capability API and cross-tenant reuse. The brief says to pick one or two, so I stopped there instead of also trying confidence scoring or multi-run stability checks, which would've been my next picks.
+- **No notification system on the handoff server** — someone has to actually be watching the operator console. The store itself is file-backed and survives a restart, at least.
+- **Extraction only understands plain label/value table rows**, not free text. Every fact this system currently reads comes from that kind of table in the mock app. Something with facts embedded in prose would need a smarter (but still deterministic, no-LLM-at-replay-time) approach.
+- **Outcome and checkpoint checks only look at the main page**, not inside frames, even though target resolution now understands frames. So a validation error rendered inside an iframe wouldn't currently get caught by the outcome logic. Extending those checks to look inside matched frames too would be a small, contained change — I just didn't get to it.
+- **No stability/flakiness signal** — each replay run is judged on its own; I didn't build anything that runs an artifact N times and reports a pass rate, which would've been useful and was the next thing on my list.
